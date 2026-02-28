@@ -3,172 +3,200 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>雲端簡易庫存管理</title>
+    <title>雲端同步庫存系統 v2</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* 移除 HTML5 數字輸入框的上下箭頭，讓介面更乾淨 */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-100 text-gray-800">
     <div id="app" class="max-w-md mx-auto min-h-screen pb-20">
-        <!-- Header -->
-        <header class="bg-blue-600 text-white p-4 shadow-md sticky top-0 z-10">
+        
+        <!-- Loading 遮罩 -->
+        <div v-if="loading" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div class="bg-white p-6 rounded-2xl shadow-xl text-center">
+                <i class="fas fa-circle-notch fa-spin text-4xl text-blue-600 mb-3"></i>
+                <p class="font-bold text-gray-600">同步雲端資料中...</p>
+            </div>
+        </div>
+
+        <header class="bg-blue-700 text-white p-4 shadow-lg sticky top-0 z-10">
             <h1 class="text-xl font-bold flex justify-between items-center">
-                📦 庫存管理系統
-                <span class="text-xs bg-blue-800 px-2 py-1 rounded">繁體中文版</span>
+                ☁️ 雲端庫存管理
+                <button @click="fetchData" class="text-sm bg-blue-800 px-3 py-1 rounded hover:bg-blue-900">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
             </h1>
         </header>
 
-        <!-- 頁籤切換 -->
-        <div class="flex bg-white border-b sticky top-[60px] z-10">
-            <button @click="tab = 'list'" :class="tab === 'list' ? 'border-blue-500 text-blue-600' : 'text-gray-500'" class="flex-1 py-3 text-center border-b-2 font-medium">庫存清單</button>
-            <button @click="tab = 'add'" :class="tab === 'add' ? 'border-blue-500 text-blue-600' : 'text-gray-500'" class="flex-1 py-3 text-center border-b-2 font-medium">新增商品</button>
-            <button @click="tab = 'history'" :class="tab === 'history' ? 'border-blue-500 text-blue-600' : 'text-gray-500'" class="flex-1 py-3 text-center border-b-2 font-medium">異動紀錄</button>
-        </div>
-
-        <!-- 內容區 -->
-        <main class="p-4">
-            
-            <!-- 搜尋框 -->
-            <div v-if="tab === 'list'" class="mb-4">
-                <input v-model="searchQuery" type="text" placeholder="搜尋商品名稱或編號..." class="w-full p-3 rounded-lg border shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-            </div>
-
-            <!-- 1. 庫存清單 -->
-            <div v-if="tab === 'list'" class="space-y-3">
-                <div v-for="item in filteredProducts" :key="item.id" class="bg-white p-4 rounded-xl shadow-sm border-l-4" :class="item.stock <= item.minStock ? 'border-red-500' : 'border-green-500'">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h3 class="font-bold text-lg text-gray-800">{{ item.name }}</h3>
-                            <p class="text-sm text-gray-500">編號: {{ item.id }} | 分類: {{ item.category }}</p>
-                        </div>
-                        <div class="text-right">
-                            <p class="text-2xl font-bold" :class="item.stock <= item.minStock ? 'text-red-600' : 'text-blue-600'">{{ item.stock }}</p>
-                            <p class="text-xs text-gray-400">安全水位: {{ item.minStock }}</p>
-                        </div>
-                    </div>
-                    <div class="mt-4 flex gap-2">
-                        <button @click="adjustStock(item, -1)" class="flex-1 bg-gray-100 hover:bg-gray-200 py-2 rounded-lg font-bold text-gray-700">- 1 出庫</button>
-                        <button @click="adjustStock(item, 1)" class="flex-1 bg-blue-50 hover:bg-blue-100 py-2 rounded-lg font-bold text-blue-600">+ 1 入庫</button>
-                        <button @click="deleteProduct(item)" class="px-3 text-gray-300 hover:text-red-500"><i class="fas fa-trash"></i></button>
-                    </div>
-                </div>
-                <div v-if="filteredProducts.length === 0" class="text-center py-10 text-gray-400">找不到相關商品</div>
-            </div>
-
-            <!-- 2. 新增商品 -->
-            <div v-if="tab === 'add'" class="bg-white p-6 rounded-xl shadow-sm space-y-4">
-                <h2 class="text-lg font-bold mb-2">建立新商品檔</h2>
-                <div>
-                    <label class="block text-sm text-gray-600 mb-1">商品名稱</label>
-                    <input v-model="newProduct.name" type="text" class="w-full p-2 border rounded">
-                </div>
-                <div>
-                    <label class="block text-sm text-gray-600 mb-1">商品編號 / 條碼</label>
-                    <input v-model="newProduct.id" type="text" class="w-full p-2 border rounded" placeholder="可掃描或輸入">
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm text-gray-600 mb-1">初始庫存</label>
-                        <input v-model.number="newProduct.stock" type="number" class="w-full p-2 border rounded">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-gray-600 mb-1">安全水位</label>
-                        <input v-model.number="newProduct.minStock" type="number" class="w-full p-2 border rounded">
-                    </div>
-                </div>
-                <button @click="addProduct" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold mt-4 hover:bg-blue-700">確認新增</button>
-            </div>
-
-            <!-- 3. 異動紀錄 -->
-            <div v-if="tab === 'history'" class="space-y-2">
-                <div v-for="log in history" class="bg-white p-3 rounded shadow-sm text-sm flex justify-between">
-                    <div>
-                        <span :class="log.type === '入庫' ? 'text-green-600' : 'text-red-600'" class="font-bold">[{{ log.type }}]</span>
-                        <span class="ml-2 font-medium">{{ log.name }}</span>
-                    </div>
-                    <div class="text-gray-400 text-xs text-right">
-                        {{ log.qty > 0 ? '+' : '' }}{{ log.qty }} <br> {{ log.time }}
-                    </div>
-                </div>
-                <div v-if="history.length === 0" class="text-center py-10 text-gray-400">尚無異動紀錄</div>
-            </div>
-
-        </main>
-
-        <!-- 手機底部快速選單 -->
-        <nav class="fixed bottom-0 w-full max-w-md bg-white border-t flex justify-around p-2 text-xs text-gray-500 shadow-lg">
-            <div class="text-center p-2" @click="tab = 'list'">
-                <i class="fas fa-boxes text-xl mb-1" :class="tab === 'list' ? 'text-blue-600' : ''"></i>
-                <p :class="tab === 'list' ? 'text-blue-600 font-bold' : ''">清單</p>
-            </div>
-            <div class="text-center p-2" @click="tab = 'add'">
-                <i class="fas fa-plus-circle text-xl mb-1" :class="tab === 'add' ? 'text-blue-600' : ''"></i>
-                <p :class="tab === 'add' ? 'text-blue-600 font-bold' : ''">新增</p>
-            </div>
-            <div class="text-center p-2" @click="tab = 'history'">
-                <i class="fas fa-history text-xl mb-1" :class="tab === 'history' ? 'text-blue-600' : ''"></i>
-                <p :class="tab === 'history' ? 'text-blue-600 font-bold' : ''">紀錄</p>
-            </div>
+        <nav class="flex bg-white border-b sticky top-[60px] z-10 shadow-sm">
+            <button @click="tab = 'list'" :class="tab === 'list' ? 'border-blue-500 text-blue-600' : 'text-gray-400'" class="flex-1 py-3 text-center border-b-2 font-medium transition-all">庫存清單</button>
+            <button @click="tab = 'add'" :class="tab === 'add' ? 'border-blue-500 text-blue-600' : 'text-gray-400'" class="flex-1 py-3 text-center border-b-2 font-medium transition-all">新增商品</button>
         </nav>
+
+        <main class="p-4">
+            <!-- 1. 庫存清單頁面 -->
+            <div v-if="tab === 'list'">
+                <div class="relative mb-4">
+                    <i class="fas fa-search absolute left-3 top-3.5 text-gray-400"></i>
+                    <input v-model="searchQuery" type="text" placeholder="搜尋商品名稱或編號..." class="w-full pl-10 pr-4 py-3 rounded-xl border-none shadow-sm focus:ring-2 focus:ring-blue-400">
+                </div>
+                
+                <div class="space-y-4">
+                    <div v-for="item in filteredProducts" :key="item['商品編號']" class="bg-white p-4 rounded-2xl shadow-sm border-l-4" :class="item['庫存量'] <= item['安全水位'] ? 'border-red-500' : 'border-green-500'">
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <h3 class="font-bold text-lg text-gray-800">{{ item['商品名稱'] }}</h3>
+                                <p class="text-xs text-gray-400 font-mono">ID: {{ item['商品編號'] }}</p>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-xs text-gray-400">目前庫存</span>
+                                <p class="text-3xl font-black" :class="item['庫存量'] <= item['安全水位'] ? 'text-red-600' : 'text-blue-600'">{{ item['庫存量'] }}</p>
+                            </div>
+                        </div>
+
+                        <!-- 數量調整區塊 -->
+                        <div class="flex items-center gap-2 bg-gray-50 p-2 rounded-xl">
+                            <span class="text-sm font-bold text-gray-500 ml-2">數量:</span>
+                            <!-- 這裡是自由設定數量的地方，預設為 1 -->
+                            <input type="number" v-model.number="item.tempQty" class="w-20 p-2 text-center bg-white border rounded-lg font-bold text-blue-600 focus:outline-none focus:border-blue-500">
+                            
+                            <button @click="updateStock(item, -1)" class="flex-1 bg-white border border-red-200 text-red-500 py-2 rounded-lg font-bold shadow-sm hover:bg-red-50">- 出庫</button>
+                            <button @click="updateStock(item, 1)" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold shadow-md hover:bg-blue-700">+ 入庫</button>
+                        </div>
+                        <p v-if="item['庫存量'] <= item['安全水位']" class="text-[10px] text-red-500 mt-2 font-bold"><i class="fas fa-exclamation-triangle"></i> 低於安全水位 ({{ item['安全水位'] }})</p>
+                    </div>
+                </div>
+                <div v-if="filteredProducts.length === 0" class="text-center py-20 text-gray-400">查無此商品</div>
+            </div>
+
+            <!-- 2. 新增商品頁面 -->
+            <div v-if="tab === 'add'" class="bg-white p-6 rounded-2xl shadow-sm space-y-4 border border-gray-100">
+                <div class="text-center mb-4">
+                    <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2 text-2xl">
+                        <i class="fas fa-plus"></i>
+                    </div>
+                    <h2 class="font-bold text-lg text-gray-700">新增雲端存檔</h2>
+                </div>
+                
+                <div class="space-y-3">
+                    <input v-model="newProduct.name" type="text" placeholder="商品名稱" class="w-full p-4 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-blue-400">
+                    <input v-model="newProduct.id" type="text" placeholder="商品編號 / 條碼掃描" class="w-full p-4 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-blue-400">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-1">
+                            <label class="text-xs text-gray-400 ml-2">初始庫存</label>
+                            <input v-model.number="newProduct.stock" type="number" class="w-full p-4 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-blue-400">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-xs text-gray-400 ml-2">安全水位</label>
+                            <input v-model.number="newProduct.minStock" type="number" class="w-full p-4 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-blue-400">
+                        </div>
+                    </div>
+                </div>
+                
+                <button @click="addItem" class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all mt-6">
+                    <i class="fas fa-cloud-upload-alt mr-2"></i>確認並同步至雲端
+                </button>
+            </div>
+        </main>
     </div>
 
     <script>
-        const { createApp, ref, computed, watch, onMounted } = Vue;
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        // !!! 重要：請貼上你從 Google Apps Script 部署得到的網址 !!!
+        const API_URL = "你的指令碼網址";
 
         createApp({
             setup() {
                 const tab = ref('list');
-                const searchQuery = ref('');
+                const loading = ref(false);
                 const products = ref([]);
-                const history = ref([]);
+                const searchQuery = ref('');
                 const newProduct = ref({ id: '', name: '', stock: 0, minStock: 5, category: '預設' });
 
-                // 從本地儲存載入資料
-                onMounted(() => {
-                    const savedProducts = localStorage.getItem('inv_products');
-                    const savedHistory = localStorage.getItem('inv_history');
-                    if (savedProducts) products.value = JSON.parse(savedProducts);
-                    if (savedHistory) history.value = JSON.parse(savedHistory);
-                });
+                // 讀取資料
+                const fetchData = async () => {
+                    loading.value = true;
+                    try {
+                        const res = await fetch(API_URL);
+                        const data = await res.json();
+                        // 為每個商品初始化一個暫時的數量欄位（預設為 1）
+                        products.value = data.map(p => ({ ...p, tempQty: 1 }));
+                    } catch (e) {
+                        alert("讀取失敗，請確認 API 網址與 Google 表格權限。");
+                    }
+                    loading.value = false;
+                };
 
-                // 監聽並自動儲存
-                watch([products, history], () => {
-                    localStorage.setItem('inv_products', JSON.stringify(products.value));
-                    localStorage.setItem('inv_history', JSON.stringify(history.value));
-                }, { deep: true });
+                // 更新庫存 (val 傳入 1 代表入庫，-1 代表出庫)
+                const updateStock = async (item, val) => {
+                    const changeAmount = item.tempQty || 1; // 讀取輸入框的數字
+                    if (changeAmount <= 0) return alert("請輸入大於 0 的數字");
+
+                    const delta = val * changeAmount; // 計算加或減的總量
+                    const newStock = item['庫存量'] + delta;
+
+                    if (newStock < 0) return alert("庫存不足，無法出庫！");
+
+                    loading.value = true;
+                    try {
+                        await fetch(API_URL, {
+                            method: "POST",
+                            mode: "no-cors", // 解決部分跨網域問題
+                            body: JSON.stringify({
+                                action: "updateStock",
+                                id: item['商品編號'],
+                                newStock: newStock
+                            })
+                        });
+                        // 雖然 no-cors 無法讀取回應，但我們可以手動更新前端顯示
+                        item['庫存量'] = newStock;
+                        item.tempQty = 1; // 更新完後重置輸入框為 1
+                    } catch (e) {
+                        alert("更新同步失敗");
+                    }
+                    loading.value = false;
+                };
+
+                // 新增商品
+                const addItem = async () => {
+                    if (!newProduct.value.name || !newProduct.value.id) return alert("請填寫商品名稱與編號");
+                    loading.value = true;
+                    try {
+                        await fetch(API_URL, {
+                            method: "POST",
+                            mode: "no-cors",
+                            body: JSON.stringify({
+                                action: "addItem",
+                                ...newProduct.value
+                            })
+                        });
+                        alert("新增指令已送出！");
+                        fetchData(); // 重新載入
+                        tab.value = 'list';
+                        newProduct.value = { id: '', name: '', stock: 0, minStock: 5, category: '預設' };
+                    } catch (e) {
+                        alert("連線失敗");
+                    }
+                    loading.value = false;
+                };
 
                 const filteredProducts = computed(() => {
+                    const query = searchQuery.value.toLowerCase();
                     return products.value.filter(p => 
-                        p.name.includes(searchQuery.value) || p.id.includes(searchQuery.value)
+                        p['商品名稱'].toLowerCase().includes(query) || 
+                        String(p['商品編號']).toLowerCase().includes(query)
                     );
                 });
 
-                const addProduct = () => {
-                    if (!newProduct.value.name || !newProduct.value.id) return alert('請填寫完整資訊');
-                    products.value.push({ ...newProduct.value });
-                    newProduct.value = { id: '', name: '', stock: 0, minStock: 5, category: '預設' };
-                    tab.value = 'list';
-                };
+                onMounted(fetchData);
 
-                const adjustStock = (item, val) => {
-                    item.stock += val;
-                    history.value.unshift({
-                        type: val > 0 ? '入庫' : '出庫',
-                        name: item.name,
-                        qty: val,
-                        time: new Date().toLocaleString()
-                    });
-                    // 只保留最近 50 筆紀錄
-                    if (history.value.length > 50) history.value.pop();
-                };
-
-                const deleteProduct = (item) => {
-                    if (confirm(`確定要刪除 ${item.name} 嗎？`)) {
-                        products.value = products.value.filter(p => p.id !== item.id);
-                    }
-                };
-
-                return { tab, searchQuery, products, filteredProducts, newProduct, addProduct, adjustStock, history, deleteProduct };
+                return { tab, loading, products, searchQuery, newProduct, fetchData, updateStock, addItem, filteredProducts };
             }
         }).mount('#app');
     </script>
